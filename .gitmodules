@@ -1,3 +1,4 @@
 [submodule "linux"]
 	path = linux
-	url = https://github.com/torvalds/linux.git
+	url = https://github.com/alexandruCarp/linux.git
+	branch = master
