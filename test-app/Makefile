@@ -1,8 +1,11 @@
 
-build: netlink_test
+build: analyzer mmaping
 
 clean:
-	rm -f netlink_test
+	rm -f analyzer mmaping
 
-netlink_test: netlink_test.c
+analyzer: analyzer.c
 	$(CC) -static -o $@ $< -I /usr/include/libnl3 -lnl-3 -lnl-genl-3
+
+mmaping: mmaping.c
+	$(CC) -o $@ $<
