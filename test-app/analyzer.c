@@ -19,6 +19,12 @@ unsigned int analyze(unsigned long addr) {
     if (strncmp((char *) addr, "virus", strlen("virus")) == 0) {
         return 1;
     }
+
+    printf("first 10 bytes: ");
+    for (int i = 0; i < 10 ; i++) {
+        printf("%hhx ", ((char *) addr)[i]);
+    }
+    printf("\n");
     return 0;
 }
 
