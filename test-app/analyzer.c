@@ -14,7 +14,9 @@ struct nl_sock *sock;
 int nl_fam;
 static int send_int_msg(struct nl_sock *sk, int fam, int value);
 
-int analyze(unsigned long addr, unsigned long len) {
+int (*analyze)(unsigned long addr, unsigned long len) = NULL;
+
+int analyze_print(unsigned long addr, unsigned long len) {
     if (strncmp((char *) addr, "virus", strlen("virus")) == 0) {
         return 1;
     }
@@ -24,6 +26,27 @@ int analyze(unsigned long addr, unsigned long len) {
         printf("%hhx ", ((char *) addr)[i]);
     }
     printf("\n");
+    return 0;
+}
+
+int analyze_nop(unsigned long addr, unsigned long len)
+{
+    return 0;
+}
+
+int analyze_liniar(unsigned long addr, unsigned long len)
+{
+    char *data = (char *) addr;
+    uint32_t hash = 0x811c9dc5;
+
+    for (size_t i = 0; i < len; ++i) {
+        hash ^= data[i];
+        hash *= 0x01000193;
+    }
+
+    if (hash == 0xdeadbeef) {
+        return 1;
+    }
     return 0;
 }
 
@@ -87,7 +110,23 @@ static int send_int_msg(struct nl_sock *sk, int fam, int value)
 	return err;
 }
 
-int main(void) {
+int main(int argc, char **argv)
+{
+    if (argc != 2) {
+        printf("Usage: %s <analyze_type>\n", argv[0]);
+        printf("analyze_type: print, nop, liniar\n");
+        return -1;
+    }
+    if (strcmp(argv[1], "print") == 0) {
+        analyze = analyze_print;
+    } else if (strcmp(argv[1], "nop") == 0) {
+        analyze = analyze_nop;
+    } else if (strcmp(argv[1], "liniar") == 0) {
+        analyze = analyze_liniar;
+    } else {
+        printf("Unknown analyze type: %s\n", argv[1]);
+        return -1;
+    }
 
     int my_pid = getpid();
     printf("my pid: %d\n", my_pid);
