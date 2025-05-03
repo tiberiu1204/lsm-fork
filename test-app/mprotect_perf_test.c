@@ -2,14 +2,16 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <time.h>
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s <iterations> <memory_pages_number>\n", argv[0]);
+    if (argc != 5) {
+        fprintf(stderr, "Usage: %s <iterations> <memory_pages_number_start> <memory_pages_number_end> <config>\n", argv[0]);
         return EXIT_FAILURE;
     }
     int iterations = atoi(argv[1]);
-    int num_pages = atoi(argv[2]);
+    int num_pages_start = atoi(argv[2]);
+    int num_pages = atoi(argv[3]);
     if (num_pages <= 0) {
         fprintf(stderr, "Invalid number of pages: %d\n", num_pages);
         return EXIT_FAILURE;
@@ -26,26 +28,44 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    char time_file_name[100];
+    sprintf(time_file_name, "perf_results/mprotect_%s_%d_%d.csv", argv[4], num_pages_start, num_pages);
+    FILE *time_file = fopen(time_file_name, "w");
+    if (time_file == NULL) {
+        perror("fopen");
+        exit(EXIT_FAILURE);
+    }
+
+    fprintf(time_file, "num_pages,elapsed_time_ns\n");
+
+    struct timespec start, end;
+
     // Initialize the memory with some data
     for (size_t i = 0; i < page_size * num_pages; i++) {
         ((char *)addr)[i] = (char)i;
     }
 
     for (int i = 0; i < iterations; i++) {
-        if (mprotect(addr, page_size * num_pages, PROT_READ | PROT_EXEC) < 0) {
-            perror("mprotect exec");
-            exit(EXIT_FAILURE);
-        }
+        printf("Iteration number %d\n", i);
 
-        if (mprotect(addr, page_size * num_pages, PROT_READ | PROT_WRITE) < 0) {
-            perror("mprotect write");
-            exit(EXIT_FAILURE);
-        }
+        for (int np = num_pages_start; np <= num_pages; np++) {
+            clock_gettime(CLOCK_MONOTONIC, &start);
+            if (mprotect(addr, page_size * np, PROT_READ | PROT_EXEC) < 0) {
+                perror("mprotect exec");
+                exit(EXIT_FAILURE);
+            }
+            clock_gettime(CLOCK_MONOTONIC, &end);
 
-        ((char *)addr)[0] = (char)i; // Write to the memory
+            long elapsed_time_ns = (end.tv_sec - start.tv_sec) * 1e9 + (end.tv_nsec - start.tv_nsec);
+            fprintf(time_file, "%d, %ld\n", np, elapsed_time_ns);
+
+            if (mprotect(addr, page_size * np, PROT_READ | PROT_WRITE) < 0) {
+                perror("mprotect write");
+                exit(EXIT_FAILURE);
+            }
+        }
     }
 
     munmap(addr, page_size * num_pages);
-    printf("Done anonymous mprotect exec test\n");
     return 0;
 }
