@@ -5,8 +5,7 @@ clean:
 	rm -f analyzer mmaping mprotecting bpf mprotect_perf_test mmap_perf_test read_char_device
 
 analyzer: analyzer.c
-	$(CC) -static -o $@ $< -I /usr/include/libnl3 -lnl-3 -lnl-genl-3
-
+	$(CC) -o $@ $< yara/libyara.a -static -I yara/include -I /usr/include/libnl3 -lnl-3 -lnl-genl-3 -lm
 mmaping: mmaping.c
 	$(CC) -o $@ $<
 

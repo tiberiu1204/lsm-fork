@@ -8,10 +8,12 @@
 #include <netlink/attr.h>
 #include <stdio.h>
 #include <errno.h>
+#include <yara.h>
 #include "../linux/include/uapi/linux/mcheck.h"
 
 struct nl_sock *sock;
 int nl_fam;
+static YR_RULES *yr_rules = NULL;
 static int send_int_msg(struct nl_sock *sk, int fam, int value);
 
 int (*analyze)(unsigned long addr, unsigned long len) = NULL;
@@ -48,6 +50,32 @@ int analyze_liniar(unsigned long addr, unsigned long len)
         return 1;
     }
     return 0;
+}
+
+int yara_callback(YR_SCAN_CONTEXT *context, int message, void *message_data, void *user_data)
+{
+    if (message == CALLBACK_MSG_RULE_MATCHING) {
+        YR_RULE *rule = (YR_RULE *) message_data;
+        printf("YARA rule matched: %s\n", rule->identifier);
+        *((int *) user_data) = 1;
+        return CALLBACK_ABORT;
+    }
+
+    return CALLBACK_CONTINUE;
+}
+int analyze_yara(unsigned long addr, unsigned long len)
+{
+    int result = 0;
+    yr_rules_scan_mem(
+        yr_rules,
+        (const uint8_t *) addr,
+        len,
+        0, // flags
+        yara_callback,
+        &result, // user_data
+        0 // timeout
+    );
+    return result;
 }
 
 static int message_handler(struct nl_msg *msg, void *arg)
@@ -110,11 +138,45 @@ static int send_int_msg(struct nl_sock *sk, int fam, int value)
 	return err;
 }
 
+int yara_init()
+{
+    if (yr_initialize() != ERROR_SUCCESS) {
+        printf("Failed to initialize YARA\n");
+        return -1;
+    }
+    YR_COMPILER *compiler;
+    if (yr_compiler_create(&compiler) != ERROR_SUCCESS) {
+        printf("Failed to create YARA compiler\n");
+        return -1;
+    }
+
+    FILE *rules_file = fopen("rules.yar", "r");
+    if (!rules_file) {
+        printf("Failed to open rules file\n");
+        yr_compiler_destroy(compiler);
+        return -1;
+    }
+
+    if (yr_compiler_add_file(compiler, rules_file, NULL, NULL) != ERROR_SUCCESS) {
+        printf("Failed to add rules file to YARA compiler\n");
+        fclose(rules_file);
+        yr_compiler_destroy(compiler);
+        return -1;
+    }
+    fclose(rules_file);
+    if (yr_compiler_get_rules(compiler, &yr_rules) != ERROR_SUCCESS) {
+        printf("Failed to get YARA rules\n");
+        yr_compiler_destroy(compiler);
+        return -1;
+    }
+    yr_compiler_destroy(compiler);
+    return 0;
+}
 int main(int argc, char **argv)
 {
     if (argc != 2) {
         printf("Usage: %s <analyze_type>\n", argv[0]);
-        printf("analyze_type: print, nop, liniar\n");
+        printf("analyze_type: print, nop, liniar, yara\n");
         return -1;
     }
     if (strcmp(argv[1], "print") == 0) {
@@ -123,8 +185,15 @@ int main(int argc, char **argv)
         analyze = analyze_nop;
     } else if (strcmp(argv[1], "liniar") == 0) {
         analyze = analyze_liniar;
+    } else if (strcmp(argv[1], "yara") == 0) {
+        analyze = analyze_yara;
     } else {
         printf("Unknown analyze type: %s\n", argv[1]);
+        return -1;
+    }
+
+    if (yara_init() != 0) {
+        printf("Failed to initialize YARA\n");
         return -1;
     }
 
