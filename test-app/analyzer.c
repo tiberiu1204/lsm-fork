@@ -8,21 +8,37 @@
 #include <netlink/socket.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <yara.h>
 
-enum { FILENAME_SIZE = 128 };
+enum { MAX_FILENAME_SIZE = 512 };
 
 struct nl_sock *sock;
 int nl_fam;
 static YR_RULES *yr_rules = NULL;
 static int send_int_msg(struct nl_sock *sk, int fam, int value);
 
-int (*analyze)(unsigned long addr, unsigned long len) = NULL;
+int (*analyze)(uint64_t pid, uint64_t init_addr, uint64_t mapped_addr,
+               uint64_t len, uint64_t prot, uint64_t is_file_backed) = NULL;
 
-int analyze_dump(unsigned long addr, unsigned long len) {
-  char filename[FILENAME_SIZE];
-  snprintf(filename, sizeof(filename), "%lx_%lx.memdump", addr, len);
+const void prot_flags_to_rwxp(char perms[4], int prot) {
+  perms[0] = (prot & PROT_READ) ? 'r' : '-';
+  perms[1] = (prot & PROT_WRITE) ? 'w' : '-';
+  perms[2] = (prot & PROT_EXEC) ? 'x' : '-';
+  perms[3] = '\0';
+}
+
+int analyze_dump(uint64_t pid, uint64_t init_addr, uint64_t mapped_addr,
+                 uint64_t len, uint64_t prot, uint64_t is_file_backed) {
+
+  char filename[MAX_FILENAME_SIZE];
+  char perms[5];
+  prot_flags_to_rwxp(perms, prot);
+  snprintf(filename, sizeof(filename), "%lu_%s_i_%lx_m_%lx_%lx_%lu.memdump",
+           pid, perms, init_addr, mapped_addr, len, is_file_backed);
+
+  void *data = (void *)mapped_addr;
 
   FILE *f = fopen(filename, "wb");
   if (!f) {
@@ -30,7 +46,6 @@ int analyze_dump(unsigned long addr, unsigned long len) {
     return errno;
   }
 
-  void *data = (void *)addr;
   size_t written = fwrite(data, 1, len, f);
   if (written != len) {
     perror("fwrite");
@@ -117,10 +132,16 @@ static int message_handler(struct nl_msg *msg, void *arg) {
     return NL_SKIP;
   }
 
-  unsigned long addr = (unsigned long)nla_get_u64(tb[LSM_ATTR_ADDRESS]);
+  unsigned long pid = (unsigned long)nla_get_u64(tb[LSM_ATTR_PID]);
+  unsigned long init_addr =
+      (unsigned long)nla_get_u64(tb[LSM_ATTR_INIT_ADDRESS]);
+  unsigned long mapped_addr = (unsigned long)nla_get_u64(tb[LSM_ATTR_ADDRESS]);
   unsigned long len = (unsigned long)nla_get_u64(tb[LSM_ATTR_LENGTH]);
+  unsigned long prot = (unsigned long)nla_get_u64(tb[LSM_ATTR_PROT]);
+  unsigned long is_file_backed =
+      (unsigned long)nla_get_u64(tb[LSM_ATTR_IS_FILE_BACKED]);
 
-  int result = analyze(addr, len);
+  int result = analyze(pid, init_addr, mapped_addr, len, prot, is_file_backed);
 
   send_int_msg(sock, nl_fam, result);
   return NL_OK;
@@ -193,7 +214,7 @@ int main(int argc, char **argv) {
     printf("analyze_type: print, nop, liniar, yara, dump\n");
     return -1;
   }
-  if (strcmp(argv[1], "print") == 0) {
+  /*if (strcmp(argv[1], "print") == 0) {
     analyze = analyze_print;
   } else if (strcmp(argv[1], "nop") == 0) {
     analyze = analyze_nop;
@@ -201,7 +222,8 @@ int main(int argc, char **argv) {
     analyze = analyze_liniar;
   } else if (strcmp(argv[1], "yara") == 0) {
     analyze = analyze_yara;
-  } else if (strcmp(argv[1], "dump") == 0) {
+  } else*/
+  if (strcmp(argv[1], "dump") == 0) {
     analyze = analyze_dump;
   } else {
     printf("Unknown analyze type: %s\n", argv[1]);
