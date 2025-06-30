@@ -1,4 +1,4 @@
 [submodule "linux"]
 	path = linux
-	url = https://github.com/alexandruCarp/linux.git
+	url = https://github.com/tiberiu1204/linux-fork
 	branch = master
