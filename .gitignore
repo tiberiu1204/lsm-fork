@@ -1,4 +1,5 @@
-rootfs/
+rootfs
+v8
 compile_commands.json
 *.o
 *.ko

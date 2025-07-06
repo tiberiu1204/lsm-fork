@@ -2,7 +2,7 @@
 build: analyzer mmaping mprotecting bpf mprotect_perf_test mmap_perf_test read_char_device
 
 clean:
-	rm -f analyzer mmaping mprotecting bpf mprotect_perf_test mmap_perf_test read_char_device
+	rm -f analyzer mmaping mprotecting bpf mprotect_perf_test mmap_perf_test read_char_device text_nx
 
 analyzer: analyzer.c
 	$(CC) -o $@ $< yara/libyara.a -static -I yara/include -I /usr/include/libnl3 -lnl-3 -lnl-genl-3 -lm
@@ -22,4 +22,7 @@ mmap_perf_test: mmap_perf_test.c
 	$(CC) -o $@ $<
 
 read_char_device: read_char_device.c
+	$(CC) -o $@ $<
+
+test_nx: test_nx.c
 	$(CC) -o $@ $<

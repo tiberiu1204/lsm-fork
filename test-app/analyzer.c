@@ -37,8 +37,10 @@ int analyze_dump(uint64_t pid, uint64_t init_addr, uint64_t mapped_addr,
   prot_flags_to_rwxp(perms, prot);
   snprintf(filename, sizeof(filename), "%lu_%s_i_%lx_m_%lx_%lx_%lu.memdump",
            pid, perms, init_addr, mapped_addr, len, is_file_backed);
-
   void *data = (void *)mapped_addr;
+
+  char *buf = (char *)malloc(len);
+  memcpy(buf, data, len);
 
   FILE *f = fopen(filename, "wb");
   if (!f) {
@@ -46,14 +48,16 @@ int analyze_dump(uint64_t pid, uint64_t init_addr, uint64_t mapped_addr,
     return errno;
   }
 
-  size_t written = fwrite(data, 1, len, f);
+  size_t written = fwrite(buf, 1, len, f);
   if (written != len) {
     perror("fwrite");
     fclose(f);
+    free(buf);
     return errno;
   }
 
   fclose(f);
+  free(buf);
   printf("Dumped memory successfully to %s\n", filename);
   return 0;
 }
