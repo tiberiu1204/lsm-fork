@@ -1,4 +1,5 @@
-PLATFORM=amd64
+PLATFORM := amd64
+nproc := $(shell nproc)
 
 ifeq ($(PLATFORM),arm64)
 CROSS_COMPILE := aarch64-linux-gnu-
@@ -18,7 +19,7 @@ rootfs:
 
 build_linux: $(PLATFORM).config
 	cd linux && \
-	cp ../$(PLATFORM).config ./ && \
+	cp ../$(PLATFORM).config ./.config && \
 	make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) W=1 KCFLAGS=$(KCFLAGS) -j$(nproc)
 
 modules: build_linux
