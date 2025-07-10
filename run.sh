@@ -4,10 +4,10 @@ set -e
 
 ROOTFS_DIR=${ROOTFS_DIR:-rootfs}
 
-ARCH=${1:-x64}
+ARCH=${1:-x86_64}
 
 case "$ARCH" in
-  x64)
+	x86_64)
     sudo qemu-system-x86_64 \
       --enable-kvm \
       -smp 2 \

@@ -13,6 +13,14 @@ endif
 
 all: rootfs linux modules install_modules
 
+# Mount the test-app folder into a directory names 'share' inside the rootfs
+mount_share:
+	sudo mkdir -p rootfs/root/share
+	sudo mount --bind test-app rootfs/root/share
+
+umount_share:
+	sudo umount rootfs/root/share
+
 rootfs:
 	sudo debootstrap --arch=$(PLATFORM) stable rootfs && \
 	sudo chroot rootfs /bin/bash -c "yes '1234' | passwd"
