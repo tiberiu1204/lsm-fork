@@ -1,5 +1,6 @@
 
 PLATFORM := amd64
+ROOTFS_GCC := rootfs/usr/bin/gcc
 nproc := $(shell nproc)
 
 ifeq ($(PLATFORM),arm64)
@@ -36,7 +37,7 @@ rootfs:
 build_linux: $(PLATFORM).config
 	cd linux && \
 	cp ../$(PLATFORM).config ./.config && \
-	make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) W=1 KCFLAGS=$(KCFLAGS) -j$(nproc)
+	make CC=$(ROOTFS_GCC) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) W=1 KCFLAGS=$(KCFLAGS) -j$(nproc)
 
 modules: build_linux
 	cd linux && \
@@ -44,6 +45,7 @@ modules: build_linux
 
 install_modules: rootfs modules
 	sudo mkdir -p rootfs/usr/src && \
+	sudo rm -f rootfs/usr/linux && \
 	sudo cp -r linux rootfs/usr/src
 	cd linux && \
 	sudo INSTALL_MOD_PATH=../rootfs make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules_install
