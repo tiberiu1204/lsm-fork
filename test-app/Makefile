@@ -1,6 +1,6 @@
 JIT_SPRAY_POC = jit-spray-poc-for-ksp
 
-build: analyzer mmaping mprotecting bpf mprotect_perf_test mmap_perf_test read_char_device
+build: analyzer mmaping mprotecting bpf mprotect_perf_test mmap_perf_test read_char_device test_nx
 
 clean:
 	rm -f analyzer mmaping mprotecting bpf mprotect_perf_test mmap_perf_test read_char_device test_nx

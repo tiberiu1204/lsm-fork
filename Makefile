@@ -12,7 +12,7 @@ ARCH := x86_64
 KCFLAGS := "-Wno-suggest-attribute=format -Wno-override-init -Wno-unterminated-string-initialization -Wno-format-truncation"
 endif
 
-ROOTFS_PACKAGES = build-essential linux-headers
+ROOTFS_PACKAGES = build-essential linux-headers-amd64
 
 all: rootfs linux modules install_modules
 
