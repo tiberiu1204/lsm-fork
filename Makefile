@@ -12,6 +12,8 @@ ARCH := x86_64
 KCFLAGS := "-Wno-suggest-attribute=format -Wno-override-init -Wno-unterminated-string-initialization -Wno-format-truncation"
 endif
 
+ROOTFS_PACKAGES = build-essential linux-headers
+
 all: rootfs linux modules install_modules
 
 # Mount the test-app folder into a directory names 'share' inside the rootfs
@@ -20,11 +22,13 @@ mount_share:
 	sudo mount --bind test-app rootfs/root/share
 
 umount_share:
-	sudo umount rootfs/root/share
+	if mountpoint -q rootfs/root/share; then \
+		sudo umount -f rootfs/root/share; \
+	fi
 
 rootfs:
 	sudo debootstrap --arch=$(PLATFORM) stable rootfs && \
-	sudo chroot rootfs /bin/bash -c "yes '1234' | passwd && apt update && apt install build-essential -y"
+	sudo chroot rootfs /bin/bash -c "yes '1234' | passwd && apt update && apt install $(ROOTFS_PACKAGES) -y"
 
 build_linux: $(PLATFORM).config
 	cd linux && \
@@ -39,7 +43,7 @@ install_modules: rootfs modules
 	cd linux && \
 	sudo INSTALL_MOD_PATH=../rootfs make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules_install
 
-clean_rootfs:
+clean_rootfs: umount_share
 	sudo rm -rf rootfs
 
 clean_linux:
@@ -48,6 +52,6 @@ clean_linux:
 
 clean: clean_rootfs clean_linux
 
-.PHONY: clean clean_linux clean_rootfs
+.PHONY: clean clean_linux clean_rootfs umount_share mount_share
 
 
