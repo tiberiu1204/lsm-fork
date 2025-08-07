@@ -16,6 +16,9 @@ ROOTFS_PACKAGES = build-essential linux-headers-amd64
 
 all: rootfs linux modules install_modules
 
+init:
+	git submodule update --init --recursive
+
 # Mount the test-app folder into a directory names 'share' inside the rootfs
 mount_share:
 	sudo mkdir -p rootfs/root/share
