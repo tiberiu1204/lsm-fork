@@ -2,3 +2,6 @@
 	path = linux
 	url = https://github.com/tiberiu1204/linux-fork
 	branch = main
+[submodule "test-app/jit-spray-poc-for-ksp"]
+	path = test-app/jit-spray-poc-for-ksp
+	url = https://github.com/intel/jit-spray-poc-for-ksp.git

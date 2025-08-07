@@ -1,3 +1,4 @@
+
 PLATFORM := amd64
 nproc := $(shell nproc)
 
@@ -7,7 +8,7 @@ ARCH := arm64
 KCFLAGS := "-Wno-format-overflow -Wno-unused-but-set-variable -Wno-int-conversion -Wno-suggest-attribute=format -Wno-override-init -Wno-unterminated-string-initialization -Wno-format-truncation"
 else
 CROSS_COMPILE :=
-ARCH :=
+ARCH := x86_64
 KCFLAGS := "-Wno-suggest-attribute=format -Wno-override-init -Wno-unterminated-string-initialization -Wno-format-truncation"
 endif
 
@@ -23,7 +24,7 @@ umount_share:
 
 rootfs:
 	sudo debootstrap --arch=$(PLATFORM) stable rootfs && \
-	sudo chroot rootfs /bin/bash -c "yes '1234' | passwd"
+	sudo chroot rootfs /bin/bash -c "yes '1234' | passwd && apt update && apt install build-essential -y"
 
 build_linux: $(PLATFORM).config
 	cd linux && \
@@ -48,4 +49,5 @@ clean_linux:
 clean: clean_rootfs clean_linux
 
 .PHONY: clean clean_linux clean_rootfs
+
 
