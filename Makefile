@@ -1,6 +1,5 @@
 
 PLATFORM := amd64
-ROOTFS_GCC := rootfs/usr/bin/gcc
 nproc := $(shell nproc)
 
 ifeq ($(PLATFORM),arm64)
@@ -14,6 +13,7 @@ KCFLAGS := "-Wno-suggest-attribute=format -Wno-override-init -Wno-unterminated-s
 endif
 
 ROOTFS_PACKAGES = build-essential
+ROOTFS_GCC = $(shell pwd)/rootfs/usr/bin/gcc
 
 all: rootfs linux modules install_modules
 
@@ -26,9 +26,7 @@ mount_share:
 	sudo mount --bind test-app rootfs/root/share
 
 umount_share:
-	if mountpoint -q rootfs/root/share; then \
-		sudo umount -f rootfs/root/share; \
-	fi
+		sudo umount -f rootfs/root/share;
 
 rootfs:
 	sudo debootstrap --arch=$(PLATFORM) stable rootfs && \
@@ -37,7 +35,7 @@ rootfs:
 build_linux: $(PLATFORM).config
 	cd linux && \
 	cp ../$(PLATFORM).config ./.config && \
-	make CC=$(ROOTFS_GCC) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) W=1 KCFLAGS=$(KCFLAGS) -j$(nproc)
+	make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) W=1 KCFLAGS=$(KCFLAGS) -j$(nproc)
 
 modules: build_linux
 	cd linux && \
@@ -48,9 +46,9 @@ install_modules: rootfs modules
 	sudo rm -f rootfs/usr/linux && \
 	sudo cp -r linux rootfs/usr/src
 	cd linux && \
-	sudo INSTALL_MOD_PATH=../rootfs make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules_install
+	sudo INSTALL_MOD_PATH=../rootfs make CC=$(ROOTFS_GCC) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules_install
 
-clean_rootfs: umount_share
+clean_rootfs:
 	sudo rm -rf rootfs
 
 clean_linux:

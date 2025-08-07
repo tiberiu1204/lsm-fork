@@ -30,14 +30,15 @@ test_nx: test_nx.c
 
 jit_spray_poc_for_ksp: $(JIT_SPRAY_POC)/alameda.c
 	cd $(JIT_SPRAY_POC) && \
-	$(CC) -Wall -O2 -o alameda alameda.c
+	$(CC) -Wall -O2 -o alameda alameda.c && \
+	cd ko && \
+	$(MAKE)
 
 start_jit_spray_poc: $(JIT_SPRAY_POC)/alameda fix_broken_symlink
 	cd $(JIT_SPRAY_POC)/ko && \
-	$(MAKE) && \
 	insmod jump.ko && \
-	echo 1 | sudo tee /proc/sys/net/core/bpf_jit_enable && \
-	echo 0 | sudo tee /proc/sys/kernel/kptr_restrict && \
+	echo 1 | tee /proc/sys/net/core/bpf_jit_enable && \
+	echo 0 | tee /proc/sys/kernel/kptr_restrict && \
 	../alameda
 
 fix_broken_symlink:
