@@ -32,7 +32,7 @@ jit_spray_poc_for_ksp: $(JIT_SPRAY_POC)/alameda.c
 	cd $(JIT_SPRAY_POC) && \
 	$(CC) -Wall -O2 -o alameda alameda.c
 
-start_jit_spray_poc: $(JIT_SPRAY_POC)/alameda
+start_jit_spray_poc: $(JIT_SPRAY_POC)/alameda fix_broken_symlink
 	cd $(JIT_SPRAY_POC)/ko && \
 	$(MAKE) && \
 	insmod jump.ko && \
