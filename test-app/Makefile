@@ -39,5 +39,9 @@ start_jit_spray_poc: $(JIT_SPRAY_POC)/alameda
 	echo 1 | sudo tee /proc/sys/net/core/bpf_jit_enable && \
 	echo 0 | sudo tee /proc/sys/kernel/kptr_restrict && \
 	../alameda
+
+fix_broken_symlink:
+	rm -f /lib/modules/$(shell uname -r)/build
+	ln -s /usr/src/linux /lib/modules/$(shell uname -r)/build
 	
 

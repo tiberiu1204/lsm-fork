@@ -12,7 +12,7 @@ ARCH := x86_64
 KCFLAGS := "-Wno-suggest-attribute=format -Wno-override-init -Wno-unterminated-string-initialization -Wno-format-truncation"
 endif
 
-ROOTFS_PACKAGES = build-essential linux-headers-amd64
+ROOTFS_PACKAGES = build-essential
 
 all: rootfs linux modules install_modules
 
@@ -43,6 +43,8 @@ modules: build_linux
 	make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules_prepare -j $(nproc)
 
 install_modules: rootfs modules
+	sudo mkdir -p rootfs/usr/src && \
+	sudo cp -r linux rootfs/usr/src
 	cd linux && \
 	sudo INSTALL_MOD_PATH=../rootfs make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules_install
 
