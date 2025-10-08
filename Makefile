@@ -15,7 +15,7 @@ endif
 ROOTFS_PACKAGES = build-essential
 ROOTFS_GCC = $(shell pwd)/rootfs/usr/bin/gcc
 
-all: rootfs linux modules install_modules
+all: rootfs build_linux modules install_modules
 
 init:
 	git submodule update --init --recursive
