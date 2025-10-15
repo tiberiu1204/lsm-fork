@@ -37,6 +37,20 @@ build_linux: $(PLATFORM).config
 	cp ../$(PLATFORM).config ./.config && \
 	make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) W=1 KCFLAGS=$(KCFLAGS) -j$(nproc)
 
+linux_compile_commands: $(PLATFORM).config
+	cd linux && \
+	cp ../$(PLATFORM).config ./.config && \
+	make compile_commands.json ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) W=1 KCFLAGS=$(KCFLAGS) -j$(nproc) && \
+	sed -i \
+		-e 's/-mpreferred-stack-boundary=3//g' \
+		-e 's/-mindirect-branch=thunk-extern//g' \
+		-e 's/-mindirect-branch-register//g' \
+		-e 's/-fno-allow-store-data-races//g' \
+		-e 's/-fmin-function-alignment=16//g' \
+		-e 's/-fconserve-stack//g' \
+		-e 's/-fzero-init-padding-bits=all//g' \
+		compile_commands.json
+
 modules: build_linux
 	cd linux && \
 	make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules_prepare -j $(nproc)
