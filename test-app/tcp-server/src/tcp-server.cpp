@@ -10,6 +10,7 @@
 #define SERVER_PORT 9999
 
 struct mapping_info {
+  char name[16];
   unsigned long pid;
   unsigned long long init_addr;
   unsigned long mapped_addr;
@@ -106,8 +107,9 @@ int main() {
 
       // Build filename
       char filename[256];
-      snprintf(filename, sizeof(filename), "pid_%lu_%llx_%s_%lu.dump", info.pid,
-               info.init_addr, prot_letters, info.is_file_backed);
+      snprintf(filename, sizeof(filename), "%s_pid_%lu_%llx_%s_%lu.dump",
+               info.name, info.pid, info.init_addr, prot_letters,
+               info.is_file_backed);
 
       // Write to file
       FILE *f = fopen(filename, "wb");

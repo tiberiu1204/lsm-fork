@@ -5,13 +5,13 @@ function fib(n) {
 
 function printFibs(N) {
   for (let i = 0; i < N; i++) {
-		fib(N)
+    fib(N)
     print("Hello World");
   }
 }
 
 let N = 10;
-for(let i = 0; i < 100; i++) {
-	printFibs(N);
+for (let i = 0; i < 10000; i++) {
+  printFibs(N);
 }
 
