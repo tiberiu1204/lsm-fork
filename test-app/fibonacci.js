@@ -4,14 +4,14 @@ function fib(n) {
 }
 
 function printFibs(N) {
-  for (let i = 0; i < N; i++) {
-    fib(N)
-    print("Hello World");
+  for (var i = 0; i < N; i++) {
+    fib(N);
+    // print("Hello World");
   }
 }
 
-let N = 10;
-for (let i = 0; i < 10000; i++) {
+var N = 10;
+for (var i = 0; i < 10000; i++) {
   printFibs(N);
 }
 
