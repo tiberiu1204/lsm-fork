@@ -1,5 +1,4 @@
 rootfs
-v8
 compile_commands.json
 *.o
 *.ko
@@ -9,7 +8,11 @@ compile_commands.json
 *.mod
 *.cmd
 *.memdump
+*.dump
 .*
 .venv/
 bin
+obj
+target
+./test-app/target
 !.gitignore

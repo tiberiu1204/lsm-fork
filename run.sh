@@ -10,8 +10,9 @@ case "$ARCH" in
 	x86_64)
     sudo qemu-system-x86_64 \
       --enable-kvm \
-      -smp 2 \
-      -m 2G \
+      -smp 8 \
+      -cpu host \
+      -m 16G \
       -nographic \
       -kernel linux/arch/x86/boot/bzImage \
       -virtfs local,path=${ROOTFS_DIR},mount_tag=rootfs,security_model=passthrough,id=rootfs,multidevs=remap \
