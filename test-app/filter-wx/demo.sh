@@ -16,7 +16,7 @@ DOTNET_DEMO=./test/DotNET
 WASM_DEMO=./test/wasmtime_jit_demo/Cargo.toml
 
 run_all() {
-    $FILTER $D8 $JS_DEMO
+    # $FILTER $D8 $JS_DEMO
     $FILTER $SPIDERMONKEY $JS_DEMO
     $FILTER $LUAJIT $LUA_DEMO
     $FILTER $DOTNET $DOTNET_DEMO
@@ -27,7 +27,7 @@ print_help() {
     echo "Usage: $0 [options]"
     echo
     echo "Options:"
-    echo "  d8            Run test using V8 D8"
+    echo "  d8            Run test using V8 D8 (will crash)"
     echo "  spidermonkey  Run test using SpiderMonkey"
     echo "  luajit        Run test using LuaJIT"
     echo "  dotnet        Run test using .NET demo"

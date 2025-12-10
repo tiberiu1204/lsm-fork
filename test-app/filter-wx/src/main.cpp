@@ -30,6 +30,12 @@ int32_t main(int32_t argc, char *argv[]) {
   GOTO(ans < 0, out_clean, "unable to add rule for mprotect() (%s)",
        strerror(-ans));
 
+  /* match pkey_mprotect(PROT_WRITE | PROT_EXEC --> EPERM error */
+  ans = seccomp_rule_add(ctx, SCMP_ACT_ERRNO(EPERM), SCMP_SYS(pkey_mprotect), 1,
+                         SCMP_A2(SCMP_CMP_MASKED_EQ, PROT_WX, PROT_WX));
+  GOTO(ans < 0, out_clean, "unable to add rule for mprotect() (%s)",
+       strerror(-ans));
+
   /* load eBPF filter into the kernel */
   ans = seccomp_load(ctx);
   GOTO(ans < 0, out_clean, "unable to load filter program (%s)",

@@ -1,27 +1,42 @@
 using System;
+using System.Runtime.CompilerServices;
 
 class Program
 {
-    // A method that becomes hot enough to be JIT-compiled
-    static long HotMethod(long n)
+    static readonly int pattern = unchecked((int)0xDEADBEEF);
+    static int resultHolder; // No volatile needed
+    static Random rng = new Random(); // Random number generator
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static int a(int n)
     {
-        long result = 0;
-        for (long i = 0; i < n; i++)
+        int result = 0;
+
+        // Make loop large enough to prevent folding
+        for (int i = 0; i < n; i++)
         {
             result += (i * 17) ^ (result >> 1);
         }
-        return result ^ 0xdeadbeef;
+
+        // Store XOR to a field so it's observable
+        resultHolder = result ^ pattern;
+        return resultHolder;
     }
 
     static void Main()
     {
-        // Warm up so RyuJIT compiles HotMethod()
-        for (int i = 0; i < 50_000; i++)
+        // Warm up loop
+        int sum = 0;
+        for (int i = 0; i < 50_000; i++) 
         {
-            HotMethod(5000);
+            int randomValue = rng.Next(i + 1); // random number between 0 and i (inclusive)
+            sum += a(randomValue);
+            sum %= pattern;
         }
 
-        Console.WriteLine("DotNET demo finished\n");
+        // Use the result so the JIT cannot optimize it away
+        Console.WriteLine($"Checksum: {sum:X}");
     }
 }
+
 
