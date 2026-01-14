@@ -1,13 +1,12 @@
 #include <arpa/inet.h>
 #include <errno.h>
-#include <filesystem>
-#include <iostream>
 #include <netinet/in.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #define SERVER_PORT 9999
@@ -46,6 +45,27 @@ void dump_mapping(mapping_info &info, char *buf) {
   fwrite(buf, 1, info.mapping_len, f);
   printf("Dumped to file: %s\n", filename);
   fclose(f);
+}
+
+int send_tcp(int sock, const void *buf, size_t size, int flags) {
+  ssize_t total_sent = 0, sb = 0;
+  while (total_sent < size) {
+    sb = send(sock, buf, size, 0);
+    if (sb <= 0)
+      return sb;
+    total_sent += sb;
+  }
+  printf("Sent %d bytes to client\n", size);
+  return 0;
+}
+
+int analyze_nop(int sock) {
+  char buf[4] = {0};
+  if (int ret = send_tcp(sock, buf, 4, 0) < 0) {
+    fprintf(stderr, "Error sending bytes: %d (%s)", ret, strerror(ret));
+    return -1;
+  }
+  return 0;
 }
 
 int main() {
@@ -117,22 +137,25 @@ int main() {
         }
         root_buf = buf;
       }
-      if (info.len == 0)
-        continue; // skip empty pages
 
-      // Read page content
-      total_read = 0;
-      buf = root_buf + info.offset;
-      while (total_read < info.len) {
-        rb = recv(sock_client, buf + total_read, info.len - total_read, 0);
-        if (rb <= 0) {
-          goto client_disconnected;
+      if (info.len > 0) {
+        // Read page content
+        total_read = 0;
+        buf = root_buf + info.offset;
+        while (total_read < info.len) {
+          rb = recv(sock_client, buf + total_read, info.len - total_read, 0);
+          if (rb <= 0) {
+            goto client_disconnected;
+          }
+          total_read += rb;
         }
-        total_read += rb;
       }
 
       if (info.is_end_of_mapping == 1) {
         dump_mapping(info, root_buf);
+        if (analyze_nop(sock_client) < 0) {
+          goto client_disconnected;
+        }
       }
     }
 
