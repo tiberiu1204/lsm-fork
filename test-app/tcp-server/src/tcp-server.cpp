@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 #define SERVER_PORT 9999
@@ -16,9 +17,11 @@ struct mapping_info {
   unsigned long pid;
   unsigned long long init_addr;
   unsigned long offset;
+  unsigned long mapping_len;
   unsigned long len;
   unsigned long prot;
   unsigned long is_file_backed;
+  unsigned long is_end_of_mapping;
 };
 
 // Convert prot number to letters (R/W/X)
@@ -29,49 +32,20 @@ void prot_to_letters(unsigned long prot, char out[4]) {
   out[3] = '\0';
 }
 
-int handle_overwrite(char *filename, struct mapping_info &info, char *buf) {
-  FILE *f = fopen(filename, "wb");
-  if (!f) {
-    perror("fopen");
-    return errno;
-  }
-  fwrite(buf, 1, info.len, f);
+void dump_mapping(mapping_info &info, char *buf) {
+  // Convert prot to letters
+  char prot_letters[4];
+  prot_to_letters(info.prot, prot_letters);
 
-  printf("[%s]: overwritten with new memory\n", filename);
-  return 0;
-}
-int handle_gap(char *filename, struct mapping_info &info, char *buf) {
-  FILE *f = fopen(filename, "ab");
-  if (!f) {
-    perror("fopen");
-    return errno;
-  }
-  try {
-    auto size = std::filesystem::file_size(filename);
-    unsigned long last_addr = info.init_addr + size;
-    unsigned long zero_mem_size = info.offset - last_addr;
-    char *zero_buf = (char *)calloc(zero_mem_size, 1);
-    fwrite(zero_buf, 1, zero_mem_size, f);
-    fwrite(buf, 1, info.len, f);
-    free(zero_buf);
-  } catch (std::filesystem::filesystem_error &e) {
-    std::cout << "Error: " << e.what() << "\n";
-    return -1;
-  }
+  // Build filename
+  char filename[256];
+  snprintf(filename, sizeof(filename), "%s_pid_%lu_%llx_%s_%lu.dump", info.name,
+           info.pid, info.init_addr, prot_letters, info.is_file_backed);
 
-  printf("[%s]: handled gap\n", filename);
-  return 0;
-}
-int handle_new(char *filename, struct mapping_info &info, char *buf) {
-  FILE *f = fopen(filename, "wb");
-  if (!f) {
-    perror("fopen");
-    return errno;
-  }
-  fwrite(buf, 1, info.len, f);
-
-  printf("[%s]: wrote new pages\n", filename);
-  return 0;
+  FILE *f = fopen(filename, "w");
+  fwrite(buf, 1, info.mapping_len, f);
+  printf("Dumped to file: %s\n", filename);
+  fclose(f);
 }
 
 int main() {
@@ -116,6 +90,8 @@ int main() {
 
     printf("Client connected\n");
 
+    char *buf = NULL;
+    char *root_buf = NULL;
     while (1) {
       struct mapping_info info;
       // Read mapping_info struct first
@@ -128,61 +104,36 @@ int main() {
         total_read += rb;
       }
 
-      // Allocate buffer for page
+      // Allocate buffer for new mapping
+      if (info.offset == 0) {
+        if (root_buf != NULL) {
+          munmap(root_buf, info.mapping_len);
+        }
+        buf = (char *)mmap(NULL, info.mapping_len, PROT_READ | PROT_WRITE,
+                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (buf == MAP_FAILED) {
+          fprintf(stderr, "mmap failed: %d (%s)\n", errno, strerror(errno));
+          goto client_disconnected;
+        }
+        root_buf = buf;
+      }
       if (info.len == 0)
         continue; // skip empty pages
-      char *buf = (char *)malloc(info.len);
-      if (!buf) {
-        fprintf(stderr, "malloc failed for page of size %lu\n", info.len);
-        goto client_disconnected;
-      }
 
       // Read page content
       total_read = 0;
+      buf = root_buf + info.offset;
       while (total_read < info.len) {
         rb = recv(sock_client, buf + total_read, info.len - total_read, 0);
         if (rb <= 0) {
-          free(buf);
           goto client_disconnected;
         }
         total_read += rb;
       }
 
-      // Convert prot to letters
-      char prot_letters[4];
-      prot_to_letters(info.prot, prot_letters);
-
-      // Build filename
-      char filename[256];
-      snprintf(filename, sizeof(filename), "%s_pid_%lu_%llx_%s_%lu.dump",
-               info.name, info.pid, info.init_addr, prot_letters,
-               info.is_file_backed);
-
-      // Write to file
-
-      if (std::filesystem::exists(filename) && info.offset == 0) {
-        /* overwrite existing file with new memory */
-        if (handle_overwrite(filename, info, buf) != 0) {
-          fprintf(stderr, "handle_overwrite failed\n");
-          free(buf);
-          goto client_disconnected;
-        }
-      } else if (std::filesystem::exists(filename)) {
-        /* compute the size of 0 initialized memory */
-        if (handle_gap(filename, info, buf) != 0) {
-          fprintf(stderr, "handle_gap failed\n");
-          free(buf);
-          goto client_disconnected;
-        }
-      } else {
-        /* new memor area */
-        if (handle_new(filename, info, buf) != 0) {
-          fprintf(stderr, "handle_new failed\n");
-          free(buf);
-          goto client_disconnected;
-        }
+      if (info.is_end_of_mapping == 1) {
+        dump_mapping(info, root_buf);
       }
-      free(buf);
     }
 
   client_disconnected:
