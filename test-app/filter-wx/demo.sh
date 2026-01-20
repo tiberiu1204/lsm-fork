@@ -4,16 +4,29 @@ set -e
 
 FILTER=./bin/filter-wx
 
+# --- Paths ---
 D8=./bin/v8/d8
 SPIDERMONKEY=./bin/spidermonkey
 LUAJIT=luajit
 DOTNET="dotnet run -c Release --project"
 WASM="cargo run --release --manifest-path"
+EBPF_BIN="./bin/ebpf_demo"
 
+# --- Demo Files ---
 JS_DEMO=./test/fibonacci.js
 LUA_DEMO=./test/lua_demo.lua
 DOTNET_DEMO=./test/DotNET
 WASM_DEMO=./test/wasmtime_jit_demo/Cargo.toml
+EBPF_SRC=./test/ebpf_demo.c
+
+# --- Compilation Step for eBPF Demo ---
+# Ensure bin directory exists
+mkdir -p ./bin
+
+if [ ! -f "$EBPF_BIN" ] || [ "$EBPF_SRC" -nt "$EBPF_BIN" ]; then
+    echo "Compiling eBPF demo..."
+    gcc "$EBPF_SRC" -o "$EBPF_BIN"
+fi
 
 run_all() {
     # $FILTER $D8 $JS_DEMO
@@ -21,6 +34,7 @@ run_all() {
     $FILTER $LUAJIT $LUA_DEMO
     $FILTER $DOTNET $DOTNET_DEMO
     $FILTER $WASM $WASM_DEMO
+    $FILTER $EBPF_BIN
 }
 
 print_help() {
@@ -32,6 +46,7 @@ print_help() {
     echo "  luajit        Run test using LuaJIT"
     echo "  dotnet        Run test using .NET demo"
     echo "  wasm          Run test using Wasmtime demo"
+    echo "  ebpf          Run test using eBPF JIT demo (0xDEADBEEF)"
     echo "  all           Run all tests (default if no argument is given)"
     echo "  help          Show this help message"
 }
@@ -66,10 +81,17 @@ for arg in "$@"; do
         wasm)
             $FILTER $WASM $WASM_DEMO
             ;;
+        ebpf)
+            # Ensure JIT is enabled, otherwise hook might skip it
+            if [ "$(cat /proc/sys/net/core/bpf_jit_enable)" = "0" ]; then
+                echo "WARNING: /proc/sys/net/core/bpf_jit_enable is 0."
+                echo "The LSM hook requires JIT to be enabled to catch executable code."
+            fi
+            $FILTER $EBPF_BIN
+            ;;
         *)
             echo "Unknown option: $arg"
             print_help
             ;;
     esac
 done
-
