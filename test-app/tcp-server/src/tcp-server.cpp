@@ -31,6 +31,8 @@ void prot_to_letters(unsigned long prot, char out[4]) {
   out[3] = '\0';
 }
 
+uint64_t counter = 0;
+
 void dump_mapping(mapping_info &info, char *buf) {
   // Convert prot to letters
   char prot_letters[4];
@@ -38,8 +40,9 @@ void dump_mapping(mapping_info &info, char *buf) {
 
   // Build filename
   char filename[256];
-  snprintf(filename, sizeof(filename), "%s_pid_%lu_%llx_%s_%lu.dump", info.name,
-           info.pid, info.init_addr, prot_letters, info.is_file_backed);
+  snprintf(filename, sizeof(filename), "%s_pid_%lu_%llx_%s_%lu_%llu.dump",
+           info.name, info.pid, info.init_addr, prot_letters,
+           info.is_file_backed, counter++);
 
   FILE *f = fopen(filename, "w");
   fwrite(buf, 1, info.mapping_len, f);
