@@ -14,5 +14,6 @@ compile_commands.json
 bin
 obj
 target
+malware_dataset
 ./test-app/target
 !.gitignore
