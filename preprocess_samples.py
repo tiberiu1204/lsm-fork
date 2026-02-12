@@ -3,7 +3,7 @@ import sys
 
 
 def process_files(input_dir):
-    output_dir = "test-app\/malware_dataset"
+    output_dir = "test-app/malware_dataset"
 
     # Create output directory if it doesn't exist
     if not os.path.exists(output_dir):

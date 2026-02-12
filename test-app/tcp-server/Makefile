@@ -5,7 +5,7 @@ INC = include
 
 # compiler settings
 CXX      = g++
-CXXFLAGS = -O2 -I$(INC) -gdwarf-5 -std=c++20
+CXXFLAGS = -O0 -I$(INC) -gdwarf-5 -std=c++20 -g
 LDFLAGS  =
 
 # identify sources; create targets

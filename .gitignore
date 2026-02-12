@@ -8,7 +8,7 @@ compile_commands.json
 *.mod
 *.cmd
 *.memdump
-*.dump
+*.dump*
 .*
 .venv/
 bin

@@ -38,16 +38,39 @@ void dump_mapping(mapping_info &info, char *buf) {
   char prot_letters[4];
   prot_to_letters(info.prot, prot_letters);
 
-  // Build filename
+  // Build filename with .gz extension
   char filename[256];
-  snprintf(filename, sizeof(filename), "%s_pid_%lu_%llx_%s_%lu_%llu.dump",
+  snprintf(filename, sizeof(filename), "%s_pid_%lu_%llx_%s_%lu_%llu.dump.gz",
            info.name, info.pid, info.init_addr, prot_letters,
            info.is_file_backed, counter++);
 
-  FILE *f = fopen(filename, "w");
-  fwrite(buf, 1, info.mapping_len, f);
-  printf("Dumped to file: %s\n", filename);
-  fclose(f);
+  // Construct shell command to pipe data into gzip
+  // -9 specifies maximum compression (slowest)
+  // We use redirection > to write the compressed stdout to the file
+  char command[512];
+  snprintf(command, sizeof(command), "gzip -9 > '%s'", filename);
+
+  // Open a pipe to the gzip command
+  FILE *f = popen(command, "w");
+  if (f == NULL) {
+    perror("popen failed");
+    return;
+  }
+
+  // Write the raw buffer to gzip's stdin
+  size_t written = fwrite(buf, 1, info.mapping_len, f);
+  if (written != info.mapping_len) {
+    fprintf(stderr, "Warning: Only wrote %lu of %lu bytes to compressor\n",
+            written, info.mapping_len);
+  }
+
+  // Close the pipe (this waits for gzip to finish compression)
+  int ret = pclose(f);
+  if (ret != 0) {
+    fprintf(stderr, "Compression command failed with exit code %d\n", ret);
+  } else {
+    printf("Dumped to file: %s (Max Compression)\n", filename);
+  }
 }
 
 int send_tcp(int sock, const void *buf, size_t size, int flags) {
@@ -77,12 +100,14 @@ int main() {
   socklen_t addrlen;
   ssize_t rb, total_read;
 
-  // Create TCP socket
   sock_server = socket(AF_INET, SOCK_STREAM, 0);
   if (sock_server < 0) {
     perror("socket");
     return 1;
   }
+
+  int opt = 1;
+  setsockopt(sock_server, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
   memset(&addr_server, 0, sizeof(addr_server));
   addr_server.sin_family = AF_INET;
@@ -115,9 +140,10 @@ int main() {
 
     char *buf = NULL;
     char *root_buf = NULL;
+    unsigned long current_mapping_size = 0; // <--- ADDED: Track current size
+
     while (1) {
       struct mapping_info info;
-      // Read mapping_info struct first
       total_read = 0;
       while (total_read < sizeof(info)) {
         rb = recv(sock_client, ((char *)&info) + total_read,
@@ -130,8 +156,14 @@ int main() {
       // Allocate buffer for new mapping
       if (info.offset == 0) {
         if (root_buf != NULL) {
-          munmap(root_buf, info.mapping_len);
+          // FIX: Use the stored size of the OLD buffer, not the info of the NEW
+          // one
+          munmap(root_buf, current_mapping_size);
         }
+
+        // Update the tracker to the NEW size
+        current_mapping_size = info.mapping_len;
+
         buf = (char *)mmap(NULL, info.mapping_len, PROT_READ | PROT_WRITE,
                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (buf == MAP_FAILED) {
@@ -142,15 +174,23 @@ int main() {
       }
 
       if (info.len > 0) {
-        // Read page content
         total_read = 0;
-        buf = root_buf + info.offset;
-        while (total_read < info.len) {
-          rb = recv(sock_client, buf + total_read, info.len - total_read, 0);
-          if (rb <= 0) {
-            goto client_disconnected;
+        // Safety check to ensure we don't write out of bounds
+        if (root_buf && (info.offset + info.len <= current_mapping_size)) {
+          buf = root_buf + info.offset;
+          while (total_read < info.len) {
+            rb = recv(sock_client, buf + total_read, info.len - total_read, 0);
+            if (rb <= 0)
+              goto client_disconnected;
+            total_read += rb;
           }
-          total_read += rb;
+        } else {
+          // If we get here, the client sent bad offsets or logic is out of sync
+          fprintf(stderr,
+                  "Critical: OOB Write attempted. Offset: %lu, Len: %lu, "
+                  "MapSize: %lu\n",
+                  info.offset, info.len, current_mapping_size);
+          goto client_disconnected;
         }
       }
 
@@ -163,6 +203,10 @@ int main() {
     }
 
   client_disconnected:
+    // Cleanup if disconnected mid-processing
+    if (root_buf != NULL) {
+      munmap(root_buf, current_mapping_size);
+    }
     printf("Client disconnected\n");
     close(sock_client);
   }
