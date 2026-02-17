@@ -40,9 +40,11 @@ void dump_mapping(mapping_info &info, char *buf) {
 
   // Build filename with .gz extension
   char filename[256];
-  snprintf(filename, sizeof(filename), "%s_pid_%lu_%llx_%s_%lu_%llu.dump.gz",
-           info.name, info.pid, info.init_addr, prot_letters,
-           info.is_file_backed, counter++);
+  // CHANGED: Moved counter to front, added mapping_len (size) in hex
+  snprintf(filename, sizeof(filename),
+           "%llu_%lx_%s_pid_%lu_%llx_%s_%lu.dump.gz", counter++,
+           info.mapping_len, info.name, info.pid, info.init_addr, prot_letters,
+           info.is_file_backed);
 
   // Construct shell command to pipe data into gzip
   // -9 specifies maximum compression (slowest)
