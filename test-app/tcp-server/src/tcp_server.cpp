@@ -7,19 +7,25 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #define SERVER_PORT 9999
 
+#define TASK_COMM_LEN 16
+#define MAX_ARG_LEN 64
+#define MAX_ANON_NAME 80
+
 struct mapping_info {
-  char name[16];
-  unsigned long pid;
-  unsigned long long init_addr;
-  unsigned long offset;
+  char name[TASK_COMM_LEN];
+  char args[MAX_ARG_LEN];
+  char anon_name[MAX_ANON_NAME];
+  unsigned long init_addr;
+  unsigned long mapped_addr; /* when sending via tcp, will use this as offset */
   unsigned long mapping_len;
   unsigned long len;
   unsigned long prot;
-  unsigned long is_file_backed;
   unsigned long is_end_of_mapping;
 };
 
@@ -31,26 +37,76 @@ void prot_to_letters(unsigned long prot, char out[4]) {
   out[3] = '\0';
 }
 
+// Sanitize strings to safely use them as directory or file names
+// Replaces '/' with '_' and strips out '@' entirely
+void sanitize_filename(char *str, size_t max_len) {
+  size_t j = 0;
+  for (size_t i = 0; i < max_len && str[i] != '\0'; ++i) {
+    if (str[i] == '/') {
+      str[j++] = '_';
+    } else if (str[i] != '@') {
+      str[j++] = str[i];
+    }
+  }
+  str[j] = '\0';
+}
+
 uint64_t counter = 0;
 
-void dump_mapping(mapping_info &info, char *buf) {
-  // Convert prot to letters
+void dump_mapping(struct mapping_info &info, char *buf) {
   char prot_letters[4];
   prot_to_letters(info.prot, prot_letters);
 
-  // Build filename with .gz extension
-  char filename[256];
-  // CHANGED: Moved counter to front, added mapping_len (size) in hex
-  snprintf(filename, sizeof(filename),
-           "%llu_%lx_%s_pid_%lu_%llx_%s_%lu.dump.gz", counter++,
-           info.mapping_len, info.name, info.pid, info.init_addr, prot_letters,
-           info.is_file_backed);
+  // Safely extract and sanitize name (Level 1 Directory)
+  char safe_name[TASK_COMM_LEN];
+  strncpy(safe_name, info.name, sizeof(safe_name));
+  safe_name[sizeof(safe_name) - 1] = '\0';
+  sanitize_filename(safe_name, sizeof(safe_name));
+  if (strlen(safe_name) == 0) {
+    strcpy(safe_name, "unknown_name");
+  }
+
+  // Safely extract and sanitize args (Level 2 Directory)
+  char safe_args[MAX_ARG_LEN];
+  strncpy(safe_args, info.args, sizeof(safe_args));
+  safe_args[sizeof(safe_args) - 1] = '\0';
+  sanitize_filename(safe_args, sizeof(safe_args));
+  if (strlen(safe_args) == 0) {
+    strcpy(safe_args, "unknown_args");
+  }
+
+  // Safely extract and sanitize anon_name
+  char safe_anon[MAX_ANON_NAME];
+  strncpy(safe_anon, info.anon_name, sizeof(safe_anon));
+  safe_anon[sizeof(safe_anon) - 1] = '\0';
+  sanitize_filename(safe_anon, sizeof(safe_anon));
+  if (strlen(safe_anon) == 0) {
+    strcpy(safe_anon, "noname");
+  }
+
+  // 0. Create the root dumps directory
+  mkdir("dumps", 0777);
+
+  // 1. Create top-level directory for the name inside dumps
+  char level1_dir[256];
+  snprintf(level1_dir, sizeof(level1_dir), "dumps/%s", safe_name);
+  mkdir(level1_dir, 0777);
+
+  // 2. Build nested directory path and create it for the args
+  char nested_dir[512];
+  snprintf(nested_dir, sizeof(nested_dir), "dumps/%s/%s", safe_name, safe_args);
+  mkdir(nested_dir, 0777);
+
+  // 3. Build filename with .gz extension inside the nested directory
+  char filepath[1024];
+  snprintf(filepath, sizeof(filepath),
+           "dumps/%s/%s/%llu_%lx_%s_%lx_%s_%s.dump.gz", safe_name, safe_args,
+           counter++, info.mapping_len, safe_name, info.init_addr, prot_letters,
+           safe_anon);
 
   // Construct shell command to pipe data into gzip
-  // -9 specifies maximum compression (slowest)
-  // We use redirection > to write the compressed stdout to the file
-  char command[512];
-  snprintf(command, sizeof(command), "gzip -9 > '%s'", filename);
+  char command[2048];
+  snprintf(command, sizeof(command), "gzip -9 > '%s'", filepath);
 
   // Open a pipe to the gzip command
   FILE *f = popen(command, "w");
@@ -71,7 +127,7 @@ void dump_mapping(mapping_info &info, char *buf) {
   if (ret != 0) {
     fprintf(stderr, "Compression command failed with exit code %d\n", ret);
   } else {
-    printf("Dumped to file: %s (Max Compression)\n", filename);
+    printf("Dumped to file: %s\n", filepath);
   }
 }
 
@@ -89,8 +145,9 @@ int send_tcp(int sock, const void *buf, size_t size, int flags) {
 
 int analyze_nop(int sock) {
   char buf[4] = {0};
-  if (int ret = send_tcp(sock, buf, 4, 0) < 0) {
-    fprintf(stderr, "Error sending bytes: %d (%s)", ret, strerror(ret));
+  int ret = send_tcp(sock, buf, 4, 0);
+  if (ret < 0) {
+    fprintf(stderr, "Error sending bytes: %d (%s)", ret, strerror(errno));
     return -1;
   }
   return 0;
@@ -142,7 +199,7 @@ int main() {
 
     char *buf = NULL;
     char *root_buf = NULL;
-    unsigned long current_mapping_size = 0; // <--- ADDED: Track current size
+    unsigned long current_mapping_size = 0;
 
     while (1) {
       struct mapping_info info;
@@ -156,14 +213,12 @@ int main() {
       }
 
       // Allocate buffer for new mapping
-      if (info.offset == 0) {
-        if (root_buf != NULL) {
-          // FIX: Use the stored size of the OLD buffer, not the info of the NEW
-          // one
-          munmap(root_buf, current_mapping_size);
+      if (root_buf == NULL) {
+        if (info.mapping_len == 0) {
+          fprintf(stderr, "Received mapping_len of 0\n");
+          goto client_disconnected;
         }
 
-        // Update the tracker to the NEW size
         current_mapping_size = info.mapping_len;
 
         buf = (char *)mmap(NULL, info.mapping_len, PROT_READ | PROT_WRITE,
@@ -178,8 +233,8 @@ int main() {
       if (info.len > 0) {
         total_read = 0;
         // Safety check to ensure we don't write out of bounds
-        if (root_buf && (info.offset + info.len <= current_mapping_size)) {
-          buf = root_buf + info.offset;
+        if (root_buf && (info.mapped_addr + info.len <= current_mapping_size)) {
+          buf = root_buf + info.mapped_addr;
           while (total_read < info.len) {
             rb = recv(sock_client, buf + total_read, info.len - total_read, 0);
             if (rb <= 0)
@@ -187,11 +242,10 @@ int main() {
             total_read += rb;
           }
         } else {
-          // If we get here, the client sent bad offsets or logic is out of sync
           fprintf(stderr,
                   "Critical: OOB Write attempted. Offset: %lu, Len: %lu, "
                   "MapSize: %lu\n",
-                  info.offset, info.len, current_mapping_size);
+                  info.mapped_addr, info.len, current_mapping_size);
           goto client_disconnected;
         }
       }
@@ -202,10 +256,13 @@ int main() {
           goto client_disconnected;
         }
       }
+
+      munmap(root_buf, current_mapping_size);
+      root_buf = NULL;
+      current_mapping_size = 0;
     }
 
   client_disconnected:
-    // Cleanup if disconnected mid-processing
     if (root_buf != NULL) {
       munmap(root_buf, current_mapping_size);
     }

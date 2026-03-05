@@ -1,5 +1,7 @@
 rootfs
+overlay
 compile_commands.json
+states.zip
 *.o
 *.ko
 *.mod.*

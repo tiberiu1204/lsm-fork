@@ -8,3 +8,6 @@
 [submodule "malware/javascript-malware-collection"]
 	path = malware/javascript-malware-collection
 	url = https://github.com/HynekPetrak/javascript-malware-collection.git
+[submodule "rules"]
+	path = rules
+	url = https://github.com/Yara-Rules/rules.git
