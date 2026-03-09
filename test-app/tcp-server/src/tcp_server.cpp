@@ -14,7 +14,7 @@
 #define SERVER_PORT 9999
 
 #define TASK_COMM_LEN 16
-#define MAX_ARG_LEN 64
+#define MAX_ARG_LEN 128
 #define MAX_ANON_NAME 80
 
 struct mapping_info {
