@@ -1,0 +1,307 @@
+From 511d63670f40db75518b927f92ec0a5e83d12f47 Mon Sep 17 00:00:00 2001
+From: Alexandru Carp <alexandrucarp02@gmail.com>
+Date: Thu, 27 Feb 2025 02:37:05 +0200
+Subject: [PATCH 02/27] added lsm
+
+---
+ include/linux/lsm_count.h |   7 ++
+ include/uapi/linux/lsm.h  |   1 +
+ security/Kconfig          |   1 +
+ security/Makefile         |   1 +
+ security/mcheck/Kconfig   |   3 +
+ security/mcheck/Makefile  |   1 +
+ security/mcheck/mcheck.c  | 180 ++++++++++++++++++++++++++++++++++++++
+ security/security.c       |  10 +++
+ 8 files changed, 204 insertions(+)
+ create mode 100644 security/mcheck/Kconfig
+ create mode 100644 security/mcheck/Makefile
+ create mode 100644 security/mcheck/mcheck.c
+
+diff --git a/include/linux/lsm_count.h b/include/linux/lsm_count.h
+index 16eb49761..961a1455d 100644
+--- a/include/linux/lsm_count.h
++++ b/include/linux/lsm_count.h
+@@ -66,6 +66,12 @@
+ #define LOCKDOWN_ENABLED
+ #endif
+ 
++#if IS_ENABLED(CONFIG_SECURITY_MCHECK_LSM)
++#define MCHECK_ENABLED 1,
++#else
++#define MCHECK_ENABLED
++#endif
++
+ #if IS_ENABLED(CONFIG_SECURITY_SAFESETID)
+ #define SAFESETID_ENABLED 1,
+ #else
+@@ -119,6 +125,7 @@
+ 		YAMA_ENABLED		\
+ 		LOADPIN_ENABLED		\
+ 		LOCKDOWN_ENABLED	\
++		MCHECK_ENABLED		\
+ 		SAFESETID_ENABLED	\
+ 		BPF_LSM_ENABLED		\
+ 		LANDLOCK_ENABLED	\
+diff --git a/include/uapi/linux/lsm.h b/include/uapi/linux/lsm.h
+index 938593dfd..8e1b15ff0 100644
+--- a/include/uapi/linux/lsm.h
++++ b/include/uapi/linux/lsm.h
+@@ -65,6 +65,7 @@ struct lsm_ctx {
+ #define LSM_ID_IMA		111
+ #define LSM_ID_EVM		112
+ #define LSM_ID_IPE		113
++#define LSM_ID_MCHECK	114
+ 
+ /*
+  * LSM_ATTR_XXX definitions identify different LSM attributes
+diff --git a/security/Kconfig b/security/Kconfig
+index f10dbf15c..e2fffba26 100644
+--- a/security/Kconfig
++++ b/security/Kconfig
+@@ -230,6 +230,7 @@ source "security/safesetid/Kconfig"
+ source "security/lockdown/Kconfig"
+ source "security/landlock/Kconfig"
+ source "security/ipe/Kconfig"
++source "security/mcheck/Kconfig"
+ 
+ source "security/integrity/Kconfig"
+ 
+diff --git a/security/Makefile b/security/Makefile
+index 22ff4c8bd..e5c2a7c1e 100644
+--- a/security/Makefile
++++ b/security/Makefile
+@@ -22,6 +22,7 @@ obj-$(CONFIG_SECURITY_YAMA)		+= yama/
+ obj-$(CONFIG_SECURITY_LOADPIN)		+= loadpin/
+ obj-$(CONFIG_SECURITY_SAFESETID)       += safesetid/
+ obj-$(CONFIG_SECURITY_LOCKDOWN_LSM)	+= lockdown/
++obj-$(CONFIG_SECURITY_MCHECK_LSM)	+= mcheck/
+ obj-$(CONFIG_CGROUPS)			+= device_cgroup.o
+ obj-$(CONFIG_BPF_LSM)			+= bpf/
+ obj-$(CONFIG_SECURITY_LANDLOCK)		+= landlock/
+diff --git a/security/mcheck/Kconfig b/security/mcheck/Kconfig
+new file mode 100644
+index 000000000..b3b31e8f7
+--- /dev/null
++++ b/security/mcheck/Kconfig
+@@ -0,0 +1,3 @@
++config SECURITY_MCHECK_LSM
++	bool "Enable security checks on memory mappings"
++	depends on SECURITY
+diff --git a/security/mcheck/Makefile b/security/mcheck/Makefile
+new file mode 100644
+index 000000000..07c74a939
+--- /dev/null
++++ b/security/mcheck/Makefile
+@@ -0,0 +1 @@
++obj-$(CONFIG_SECURITY_MCHECK_LSM) += mcheck.o
+diff --git a/security/mcheck/mcheck.c b/security/mcheck/mcheck.c
+new file mode 100644
+index 000000000..c557ab9de
+--- /dev/null
++++ b/security/mcheck/mcheck.c
+@@ -0,0 +1,180 @@
++#include "linux/printk.h"
++#include "net/netlink.h"
++#include <linux/security.h>
++#include <linux/export.h>
++#include <linux/lsm_hooks.h>
++#include <uapi/linux/lsm.h>
++#include <linux/netlink.h>
++#include <net/genetlink.h>
++
++#ifdef pr_fmt
++#   undef pr_fmt
++#endif
++#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt "\n"
++
++#define GEN_NETLINK_FAMILY_NAME "lsm_netlink"
++
++// Attributes (what we send/receive)
++enum {
++    LSM_ATTR_UNSPEC,
++    LSM_ATTR_ADDRESS,  // Memory address (unsigned long)
++    LSM_ATTR_RESPONSE, // User-space response (int)
++    __LSM_ATTR_MAX,
++};
++#define LSM_ATTR_MAX (__LSM_ATTR_MAX - 1)
++
++// Commands (message types)
++enum {
++    LSM_CMD_UNSPEC,
++    LSM_CMD_NOTIFY,  // Kernel → User: Send memory address
++    LSM_CMD_REPLY,   // User → Kernel: Receive integer response
++    __LSM_CMD_MAX,
++};
++#define LSM_CMD_MAX (__LSM_CMD_MAX - 1)
++
++// Attribute policy (validation)
++static struct nla_policy lsm_policy[LSM_ATTR_MAX + 1] = {
++    [LSM_ATTR_ADDRESS] = { .type = NLA_U32 },
++    [LSM_ATTR_RESPONSE] = { .type = NLA_S32 },
++};
++
++static int lsm_receive_reply(struct sk_buff *skb, struct genl_info *info);
++// Command handler mapping
++static const struct genl_ops lsm_ops[] = {
++    {
++        .cmd = LSM_CMD_REPLY,
++        .policy = lsm_policy,
++        .doit = lsm_receive_reply, // Handle user responses
++    },
++};
++
++static const struct genl_multicast_group genl_lsm_mcgrps[] = {
++    {
++        .name = "lsm_mc_group"
++    },
++};
++
++// Define the Netlink Generic family
++static struct genl_family lsm_family = {
++    .name = GEN_NETLINK_FAMILY_NAME,
++    .version = 1,
++    .maxattr = LSM_ATTR_MAX,
++    .ops = lsm_ops,
++    .n_ops = ARRAY_SIZE(lsm_ops),
++    .mcgrps = genl_lsm_mcgrps,
++    .n_mcgrps = ARRAY_SIZE(genl_lsm_mcgrps),
++};
++
++// Function to handle user-space replies
++static int lsm_receive_reply(struct sk_buff *skb, struct genl_info *info)
++{
++    if (!info->attrs[LSM_ATTR_RESPONSE]) {
++        pr_err("LSM: No response received!\n");
++        return -EINVAL;
++    }
++
++    int user_response = nla_get_s32(info->attrs[LSM_ATTR_RESPONSE]);
++    pr_info("LSM: Received response from user-space: %d\n", user_response);
++
++    return 0;
++}
++
++static int lsm_send_address(unsigned long addr) {
++    struct sk_buff *skb;
++    void *msg_head;
++    int ret;
++
++    // Allocate a new Netlink message
++    skb = genlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
++    if (!skb) {
++        pr_err("LSM: Failed to allocate new Netlink message\n");
++        return -ENOMEM;
++    }
++
++    // Create the message header
++    msg_head = genlmsg_put(skb, 0, 0, &lsm_family, 0, LSM_CMD_NOTIFY);
++    if (!msg_head) {
++        pr_err("LSM: Failed to create Netlink message header\n");
++        nlmsg_free(skb);
++        return -ENOMEM;
++    }
++
++    // Add the address attribute to the message
++    ret = nla_put_u32(skb, LSM_ATTR_ADDRESS, addr);
++    if (ret) {
++        pr_err("LSM: Failed to add address attribute to Netlink message\n");
++        genlmsg_cancel(skb, msg_head);
++        nlmsg_free(skb);
++        return ret;
++    }
++
++    // Finalize the message
++    genlmsg_end(skb, msg_head);
++
++    // Send the message
++    ret = genlmsg_multicast(&lsm_family, skb, 0, 0, GFP_KERNEL);
++    if (ret == -ESRCH) {
++		pr_warn("multicast message sent, but nobody was listening...\n");
++	} else if (ret) {
++		pr_err("failed to send multicast genl message; ret = %d\n", ret);
++	} else {
++		pr_info("multicast message sent\n");
++	}
++
++    return ret;
++}
++
++static int mcheck_mmap_addr(unsigned long addr)
++{
++    pr_info("mcheck_mmap_addr: addr = %lx\n", addr);
++    lsm_send_address(addr);
++    return 0;
++}
++static int mcheck_file_mprotect(struct vm_area_struct *vma, unsigned long reqprot, unsigned long prot)
++{
++    //pr_info("mcheck_file_mprotect: start = %lx, size = %lx, reqprot = %lx, prot = %lx\n", vma->vm_start, vma->vm_end - vma->vm_start, reqprot, prot);
++    return 0;
++}
++
++static int mcheck_custom_mmap_hook(unsigned long addr, unsigned long len, unsigned long prot)
++{
++    //pr_info("mcheck_custom_mmap_hook: addr = %lx, len = %lx, prot = %lx\n", addr, len, prot);
++    return 0;
++}
++
++static int mcheck_custom_mprotect_hook(unsigned long addr, unsigned long len, unsigned long prot)
++{
++    //pr_info("mcheck_custom_mprotect_hook: addr = %lx, len = %lx, prot = %lx\n", addr, len, prot);
++    return 0;
++}
++static struct security_hook_list mcheck_hooks[] __ro_after_init = {
++	LSM_HOOK_INIT(mmap_addr, mcheck_mmap_addr),
++    LSM_HOOK_INIT(file_mprotect, mcheck_file_mprotect),
++    LSM_HOOK_INIT(mmap_addr_size_prot, mcheck_custom_mmap_hook),
++    LSM_HOOK_INIT(mprotect_addr_size_prot, mcheck_custom_mprotect_hook),
++};
++
++static const struct lsm_id mcheck_lsmid = {
++	.name = "mcheck",
++	.id = LSM_ID_MCHECK,
++};
++
++static int __init mcheck_lsm_init(void)
++{
++    security_add_hooks(mcheck_hooks, ARRAY_SIZE(mcheck_hooks),
++               &mcheck_lsmid);
++
++    int ret = genl_register_family(&lsm_family);
++    if (ret) {
++        pr_err("LSM: Failed to register Netlink family\n");
++        return ret;
++    }
++    pr_info("MCHECK: LSM initialized\n");
++    return 0;
++}
++
++DEFINE_LSM(mcheck) = {
++    .name = "mcheck",
++    .init = mcheck_lsm_init,
++};
++    
+\ No newline at end of file
+diff --git a/security/security.c b/security/security.c
+index 143561ebc..127152694 100644
+--- a/security/security.c
++++ b/security/security.c
+@@ -2996,6 +2996,16 @@ int security_mmap_addr(unsigned long addr)
+ 	return call_int_hook(mmap_addr, addr);
+ }
+ 
++int security_mmap_addr_size_prot(unsigned long addr, unsigned long len, unsigned long prot)
++{
++	return call_int_hook(mmap_addr_size_prot, addr, len, prot);
++}
++
++int security_mprotect_addr_size_prot(unsigned long addr, unsigned long len, unsigned long prot)
++{
++	return call_int_hook(mprotect_addr_size_prot, addr, len, prot);
++}
++
+ /**
+  * security_file_mprotect() - Check if changing memory protections is allowed
+  * @vma: memory region
+-- 
+2.54.0
+

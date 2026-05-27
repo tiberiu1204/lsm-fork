@@ -9,7 +9,7 @@ KCFLAGS := "-Wno-format-overflow -Wno-unused-but-set-variable -Wno-int-conversio
 else
 CROSS_COMPILE :=
 ARCH := x86_64
-KCFLAGS := "-Wno-suggest-attribute=format -Wno-override-init -Wno-unterminated-string-initialization -Wno-format-truncation"
+KCFLAGS := "-Wno-suggest-attribute=format -Wno-override-init -Wno-unterminated-string-initialization -Wno-format-truncation -Wno-error=discarded-qualifiers"
 endif
 
 ROOTFS_PACKAGES = build-essential
@@ -35,7 +35,8 @@ rootfs:
 build_linux: $(PLATFORM).config
 	cd linux && \
 	cp ../$(PLATFORM).config ./.config && \
-	make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) W=1 KCFLAGS=$(KCFLAGS) -j$(nproc)
+	make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) olddefconfig && \
+	make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) W=1 KCFLAGS=$(KCFLAGS) WERROR=0 -j$(nproc)
 
 linux_compile_commands: $(PLATFORM).config
 	cd linux && \

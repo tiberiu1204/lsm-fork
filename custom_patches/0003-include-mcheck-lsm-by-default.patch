@@ -1,0 +1,43 @@
+From c0d8df6b49b9c62fbedd3e2a9dc7a94c994554dd Mon Sep 17 00:00:00 2001
+From: Alexandru Carp <alexandrucarp02@gmail.com>
+Date: Thu, 27 Feb 2025 04:02:26 +0200
+Subject: [PATCH 03/27] include mcheck lsm by default
+
+---
+ security/Kconfig        | 10 +++++-----
+ security/mcheck/Kconfig |  1 +
+ 2 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/security/Kconfig b/security/Kconfig
+index e2fffba26..b85257145 100644
+--- a/security/Kconfig
++++ b/security/Kconfig
+@@ -270,11 +270,11 @@ endchoice
+ 
+ config LSM
+ 	string "Ordered list of enabled LSMs"
+-	default "landlock,lockdown,yama,loadpin,safesetid,smack,selinux,tomoyo,apparmor,ipe,bpf" if DEFAULT_SECURITY_SMACK
+-	default "landlock,lockdown,yama,loadpin,safesetid,apparmor,selinux,smack,tomoyo,ipe,bpf" if DEFAULT_SECURITY_APPARMOR
+-	default "landlock,lockdown,yama,loadpin,safesetid,tomoyo,ipe,bpf" if DEFAULT_SECURITY_TOMOYO
+-	default "landlock,lockdown,yama,loadpin,safesetid,ipe,bpf" if DEFAULT_SECURITY_DAC
+-	default "landlock,lockdown,yama,loadpin,safesetid,selinux,smack,tomoyo,apparmor,ipe,bpf"
++	default "landlock,lockdown,yama,loadpin,safesetid,smack,selinux,tomoyo,apparmor,ipe,bpf,mcheck" if DEFAULT_SECURITY_SMACK
++	default "landlock,lockdown,yama,loadpin,safesetid,apparmor,selinux,smack,tomoyo,ipe,bpf,mcheck" if DEFAULT_SECURITY_APPARMOR
++	default "landlock,lockdown,yama,loadpin,safesetid,tomoyo,ipe,bpf,mcheck" if DEFAULT_SECURITY_TOMOYO
++	default "landlock,lockdown,yama,loadpin,safesetid,ipe,bpf,mcheck" if DEFAULT_SECURITY_DAC
++	default "landlock,lockdown,yama,loadpin,safesetid,selinux,smack,tomoyo,apparmor,ipe,bpf,mcheck"
+ 	help
+ 	  A comma-separated list of LSMs, in initialization order.
+ 	  Any LSMs left off this list, except for those with order
+diff --git a/security/mcheck/Kconfig b/security/mcheck/Kconfig
+index b3b31e8f7..b69c57511 100644
+--- a/security/mcheck/Kconfig
++++ b/security/mcheck/Kconfig
+@@ -1,3 +1,4 @@
+ config SECURITY_MCHECK_LSM
+ 	bool "Enable security checks on memory mappings"
+ 	depends on SECURITY
++	default y
+-- 
+2.54.0
+

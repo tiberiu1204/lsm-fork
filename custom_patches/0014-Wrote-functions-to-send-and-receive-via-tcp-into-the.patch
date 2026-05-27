@@ -1,0 +1,132 @@
+From 5eb71828de7658fe341d9a204e1d05fb556a26bc Mon Sep 17 00:00:00 2001
+From: Tiberiu Popescu <tiberiu1204@gmail.com>
+Date: Thu, 9 Oct 2025 15:01:28 +0300
+Subject: [PATCH 14/27] Wrote functions to send and receive via tcp into the
+ LSM
+
+---
+ security/mcheck/mcheck.c | 55 ++++++++++++++++++++++++++++++++++++++--
+ security/mcheck/socket.c |  2 +-
+ 2 files changed, 54 insertions(+), 3 deletions(-)
+
+diff --git a/security/mcheck/mcheck.c b/security/mcheck/mcheck.c
+index cf4c4851c..809cc0bfb 100644
+--- a/security/mcheck/mcheck.c
++++ b/security/mcheck/mcheck.c
+@@ -4,11 +4,13 @@
+ #include "linux/mm_types.h"
+ #include "linux/mman.h"
+ #include "linux/mmap_lock.h"
++#include "linux/net.h"
+ #include "linux/printk.h"
+ #include "linux/sched.h"
+ #include "linux/sched/mm.h"
+ #include "linux/spinlock.h"
+ #include "linux/timekeeping.h"
++#include "vdso/page.h"
+ #include <linux/security.h>
+ #include <linux/export.h>
+ #include <linux/lsm_hooks.h>
+@@ -25,13 +27,20 @@
+ #endif
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt "\n"
+ 
++// Module param to switch between netlink and tcp socket transport methods
++
++static bool use_tcp = true;
++module_param(use_tcp, bool, 0644);
++MODULE_PARM_DESC(use_tcp, "Send messages to userspace via a TCP socket");
++
++static struct socket *sock = NULL;
++
+ int init_char_device(void);
+ 
+ static struct task_struct *analyzer_task = NULL;
+ static unsigned int analyzer_response = 0;
+ static struct completion analyzer_ready;
+ 
+-
+ // Attribute policy (validation)
+ static struct nla_policy lsm_policy[LSM_ATTR_MAX + 1] = {
+     [LSM_ATTR_ADDRESS] = { .type = NLA_U64 },
+@@ -95,6 +104,28 @@ static int lsm_receive_reply(struct sk_buff *skb, struct genl_info *info)
+ 	return 0;
+ }
+ 
++// Function to handle user-space replies using the tcp socket
++
++
++static ssize_t lsm_receive_reply_tcp(char *buf)
++{
++	// Initialize connection
++	if (!sock) {
++		sock = _tcp_connect();
++		if (!sock) {
++			pr_err("LSM: Failed to establish TCP connection\n");
++            return -ENOTCONN;
++		}
++	}
++
++	// Receive
++	ssize_t len = _tcp_recv(sock, buf, 1024);
++	if (len < 0) {
++		pr_err("LSM: Unable to receive data over tcp (%ld)\n", len);
++	}
++	return len;
++}
++
+ struct mapping_info {
+ 	unsigned long pid;
+ 	unsigned long long init_addr;
+@@ -104,6 +135,27 @@ struct mapping_info {
+ 	unsigned long is_file_backed;
+ };
+ 
++static int lsm_send_to_userspace_tcp(char *buf, size_t len)
++{
++    int ret;
++
++    if (!buf || len == 0) {
++        pr_err("LSM: Invalid buffer or length\n");
++        return -EINVAL;
++    }
++
++    ret = _tcp_send(sock, (char *)buf, len);
++    if (ret < 0) {
++        pr_err("LSM: Failed to send data via TCP (%d)\n", ret);
++    } else {
++        pr_info("LSM: Sent %d bytes to userspace via TCP\n", ret);
++    }
++
++    sock_release(sock);
++
++    return ret;
++}
++
+ static int lsm_send_to_userspace(struct mapping_info *map_info)
+ {
+     struct sk_buff *skb;
+@@ -255,7 +307,6 @@ static int mmap_analyzer_thread(void *arg) {
+     return 0;
+ }
+ 
+-
+ static int mcheck_custom_mmap_hook(unsigned long addr, unsigned long len, unsigned long prot)
+ {
+     // pr_info("mcheck_custom_mmap_hook: addr = %lx, len = %lx, prot = %lx\n", addr, len, prot);
+diff --git a/security/mcheck/socket.c b/security/mcheck/socket.c
+index ac2b1dbc0..a9fb91121 100644
+--- a/security/mcheck/socket.c
++++ b/security/mcheck/socket.c
+@@ -111,7 +111,7 @@ static ssize_t __attribute__((unused)) _tcp_recv(struct socket *sock, char *buf,
+ 		rb = kernel_recvmsg(sock, &msg, &vec, 1, vec.iov_len, 0);
+ 		if (rb == -ERESTARTSYS || rb == -EAGAIN)
+ 			continue;
+-		RET(rb < 0, -1, "unable to send data (%ld)", rb);
++		RET(rb < 0, -1, "unable to receive data (%ld)", rb);
+ 
+ 		vec.iov_base += rb;
+ 		vec.iov_len -= rb;
+-- 
+2.54.0
+

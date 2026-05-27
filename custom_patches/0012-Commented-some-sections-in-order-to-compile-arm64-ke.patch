@@ -1,0 +1,44 @@
+From d35078a62da3f9d495be9888c55fe583e62e23cb Mon Sep 17 00:00:00 2001
+From: Tiberiu Popescu <tiberiu1204@gmail.com>
+Date: Sun, 6 Jul 2025 15:44:19 +0300
+Subject: [PATCH 12/27] Commented some sections in order to compile arm64
+ kernel. Will fix later
+
+---
+ security/mcheck/mcheck.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/security/mcheck/mcheck.c b/security/mcheck/mcheck.c
+index 12edc3c81..822728de7 100644
+--- a/security/mcheck/mcheck.c
++++ b/security/mcheck/mcheck.c
+@@ -493,7 +493,7 @@ static int mcheck_custom_mprotect_hook(unsigned long addr, unsigned long len, un
+ }
+ 
+ #ifdef CONFIG_BPF_SYSCALL
+-static int bpf_prog_hook(struct bpf_prog *prog, union bpf_attr *attr, struct bpf_token *token)
++/*static int bpf_prog_hook(struct bpf_prog *prog, union bpf_attr *attr, struct bpf_token *token)
+ {
+     if (!prog->jited) {
+         // only jited programs are interesting
+@@ -557,7 +557,7 @@ static int bpf_prog_hook(struct bpf_prog *prog, union bpf_attr *attr, struct bpf
+     kfree(analyzer_data);
+ 
+     return -analyzer_response;
+-}
++}*/
+ #endif
+ 
+ static struct security_hook_list mcheck_hooks[] __ro_after_init = {
+@@ -566,7 +566,7 @@ static struct security_hook_list mcheck_hooks[] __ro_after_init = {
+     LSM_HOOK_INIT(mmap_addr_size_prot, mcheck_custom_mmap_hook),
+     LSM_HOOK_INIT(mprotect_addr_size_prot, mcheck_custom_mprotect_hook),
+     #ifdef CONFIG_BPF_SYSCALL
+-    LSM_HOOK_INIT(bpf_prog_load, bpf_prog_hook),
++    // LSM_HOOK_INIT(bpf_prog_load, bpf_prog_hook),
+     #endif
+ };
+ 
+-- 
+2.54.0
+

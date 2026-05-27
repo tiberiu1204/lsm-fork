@@ -1,0 +1,73 @@
+From 31777c0a530f28f00fb34a565294f9c434d49fdf Mon Sep 17 00:00:00 2001
+From: Alexandru Carp <alexandrucarp02@gmail.com>
+Date: Thu, 27 Feb 2025 02:36:24 +0200
+Subject: [PATCH 01/27] added custom hooks to mmap and mprotect
+
+---
+ include/linux/lsm_hook_defs.h | 2 ++
+ include/linux/security.h      | 4 ++++
+ mm/mmap.c                     | 4 ++++
+ mm/mprotect.c                 | 4 ++++
+ 4 files changed, 14 insertions(+)
+
+diff --git a/include/linux/lsm_hook_defs.h b/include/linux/lsm_hook_defs.h
+index e2f1ce37c..352915261 100644
+--- a/include/linux/lsm_hook_defs.h
++++ b/include/linux/lsm_hook_defs.h
+@@ -194,6 +194,8 @@ LSM_HOOK(int, 0, file_ioctl, struct file *file, unsigned int cmd,
+ LSM_HOOK(int, 0, file_ioctl_compat, struct file *file, unsigned int cmd,
+ 	 unsigned long arg)
+ LSM_HOOK(int, 0, mmap_addr, unsigned long addr)
++LSM_HOOK(int, 0, mmap_addr_size_prot, unsigned long addr, unsigned long len, unsigned long prot)
++LSM_HOOK(int, 0, mprotect_addr_size_prot, unsigned long addr, unsigned long len, unsigned long prot)
+ LSM_HOOK(int, 0, mmap_file, struct file *file, unsigned long reqprot,
+ 	 unsigned long prot, unsigned long flags)
+ LSM_HOOK(int, 0, file_mprotect, struct vm_area_struct *vma,
+diff --git a/include/linux/security.h b/include/linux/security.h
+index 980b6c207..d672912cd 100644
+--- a/include/linux/security.h
++++ b/include/linux/security.h
+@@ -476,6 +476,10 @@ int security_file_ioctl_compat(struct file *file, unsigned int cmd,
+ int security_mmap_file(struct file *file, unsigned long prot,
+ 			unsigned long flags);
+ int security_mmap_addr(unsigned long addr);
++int security_mmap_addr_size_prot(unsigned long addr, unsigned long len,
++	unsigned long prot);
++int security_mprotect_addr_size_prot(unsigned long addr, unsigned long len,
++	unsigned long prot);
+ int security_file_mprotect(struct vm_area_struct *vma, unsigned long reqprot,
+ 			   unsigned long prot);
+ int security_file_lock(struct file *file, unsigned int cmd);
+diff --git a/mm/mmap.c b/mm/mmap.c
+index cda01071c..7cfa7907e 100644
+--- a/mm/mmap.c
++++ b/mm/mmap.c
+@@ -410,6 +410,10 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
+ 	if (IS_ERR_VALUE(addr))
+ 		return addr;
+ 
++	unsigned long error = security_mmap_addr_size_prot(addr, len, prot);
++	if (error)
++		return error;
++
+ 	if (flags & MAP_FIXED_NOREPLACE) {
+ 		if (find_vma_intersection(mm, addr, addr + len))
+ 			return -EEXIST;
+diff --git a/mm/mprotect.c b/mm/mprotect.c
+index 516b1d847..5f632c2f0 100644
+--- a/mm/mprotect.c
++++ b/mm/mprotect.c
+@@ -827,6 +827,10 @@ static int do_mprotect_pkey(unsigned long start, size_t len,
+ 		if (error)
+ 			break;
+ 
++		error = security_mprotect_addr_size_prot(start, len, prot);
++		if (error)
++			break;
++
+ 		tmp = vma->vm_end;
+ 		if (tmp > end)
+ 			tmp = end;
+-- 
+2.54.0
+
