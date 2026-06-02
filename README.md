@@ -1,101 +1,82 @@
-# Process Ancestry (WIP)
+# LSM-Fork
 
-## Testing environment
+## Build Rules (Makefile)
 
-First debootstrap a root filesystem (kernel not included). \
-You will need to chroot into it and set the root password.
-```bash
-# populate root filesystem
-$ mkdir -p rootfs/
-$ sudo debootstrap stable rootfs/
+- `make init`: Initialize and update git submodules.
+- `make rootfs`: Create a Debian-based root filesystem using `debootstrap`. Requires `sudo`.
+- `make build_linux`: Compile the Linux kernel using the configuration for the current platform (`amd64` or `arm64`).
+- `make modules`: Prepare kernel modules for installation.
+- `make install_modules`: Install the compiled kernel source and modules into the rootfs.
+- `make all`: Executes `rootfs`, `build_linux`, `modules`, and `install_modules` in sequence.
+- `make mount_share`: Bind-mount the `test-app` directory to `/root/share` inside the rootfs.
+- `make umount_share`: Unmount the `test-app` share.
+- `make clean_rootfs`: Remove the `rootfs` directory.
+- `make clean_linux`: Run `make clean` inside the `linux` directory.
+- `make clean`: Executes both `clean_rootfs` and `clean_linux`.
+- `make linux_compile_commands`: Generate `compile_commands.json` for the Linux kernel.
 
-# change root password
-$ sudo chroot rootfs /bin/bash
-$ passwd
-$ exit
-```
+## Project Setup Guide
 
-Then, initialize all submodules (at the moment only the Linux kernel).
-```bash
-$ git submodule update --init --recursive
-```
+1. **Install Dependencies**
+   Ensure the following packages are installed on your host system:
+   `build-essential`, `debootstrap`, `qemu-system-x86`, `libncurses-dev`, `flex`, `bison`, `libssl-dev`, `libelf-dev`, `bc`.
 
-Next, compile the kernel using a minimal config, optimized for virtualized targets. \
-The kernel modules will be installed into the `rootfs/` directory but the kernel
-itself doesn't have to be.
+2. **Initialize Submodules**
+   ```bash
+   make init
+   ```
 
-```bash
-$ cd linux/
+3. **Build everything**
+   This command creates the rootfs, builds the kernel, and installs modules.
+   ```bash
+   make all
+   ```
 
-# this will make the kernel aware (to some extent) that it's running in a VM
-# so no need to emulate some devices / cpu features; output saved in ".config"
-$ make x86_64_defconfig kvm_guest.config
+4. **Start the VM**
+   Use `run_safe.sh` to start the VM. This script uses OverlayFS to ensure that any changes made during the session are discarded after the VM stops. It also automatically binds the `test-app` directory to `/root/share` inside the guest.
+   ```bash
+   ./run_safe.sh
+   ```
+   - **Default User:** `root`
+   - **Default Password:** `1234`
 
-# run this only if you need to make manual changes to the config
-# OPTIONAL: enable debug info
-#       search for CONFIG_DEBUG_INFO_DWARF5 by pressing / (same as vim)
-#       go to the first match found by pressing 1
-$ make menuconfig
+## Component Documentation
 
-# compile it using all available cores
-$ make -j $(nproc)
+### TCP Server
 
-# install modules in the rootfs directory
-$ make modules_prepare -j $(nproc)
-$ sudo INSTALL_MOD_PATH=../rootfs make modules_install
-```
+Located in `test-app/tcp-server`. This server receives memory dumps from the LSM hooks via TCP.
 
-Now you can start the VM using the `run.sh` script.
+- **Build:**
+  ```bash
+  cd test-app/tcp-server
+  make
+  ```
+- **Run:**
+  ```bash
+  ./bin/tcp_server
+  ```
+  The server listens on port `9999` by default.
 
-```bash
-$ ./run.sh
+### Filter-WX
 
-# NOTE: to forcibly close QEMU, do <Ctrl-A> + X
-```
+Located in `test-app/filter-wx`. This utility uses `libseccomp` to prevent processes from creating or modifying memory mappings with both Write and Execute permissions (W^X).
 
-## Development
+- **Build:**
+  ```bash
+  cd test-app/filter-wx
+  make
+  ```
+- **Run:**
+  ```bash
+  ./bin/filter-wx <program_to_run> [args...]
+  ```
+  Example:
+  ```bash
+  ./bin/filter-wx /bin/bash
+  ```
 
-Because we are using a 9p rootfs, we can create a bind mount for the `kmod/`
-directory inside the rootfs. This allows us to work on the module (and compile
-it) on our host. Meanwhile, all updates will be immediately visible to the
-guest system.
-
-```bash
-$ sudo mkdir -p rootfs/root/kmod
-$ sudo mount --bind kmod rootfs/root/kmod
-```
-
-In the `kmod/` directory you have a test module. Change it as you go. \
-The Makefile will reference the linux kernel repo during compilation in order to
-make sure that your module is compatible with the kernel that will be running in
-the VM.
-
-```bash
-$ cd kmod
-$ make
-```
-
-Inside the VM, you can insert the module, remove it and dump the kernel debug log.
-
-```bash
-# INSIDE THE VM!
-$ insmod kmod/test.ko
-$ rmmod test
-
-$ dmesg
-```
-
-## Language server tips
-
-If you need a `compile_commands.json` for your kernel module (or the kernel
-itself if you're working directly on its source code), try this *after* the
-compilation is done:
-
-```bash
-$ cd linux
-$ ./scripts/clang-tools/gen_compile_commands.py
-```
-
-Use this with your language server and you'll be able to index the kernel
-sources referenced by the module. This also accounts for macro definitions
-such as `#ifdef`, etc.
+- **Testing:**
+  A test program is provided to verify the filter:
+  ```bash
+  ./bin/test
+  ```
