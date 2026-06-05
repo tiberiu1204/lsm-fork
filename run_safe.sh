@@ -28,7 +28,7 @@ sudo qemu-system-x86_64 \
   -device e1000,netdev=net0 \
   -serial mon:stdio \
   -serial tcp::5555,server,nowait \
-  -append "root=rootfs rootfstype=9p rootflags=trans=virtio,version=9p2000.L rw console=ttyS0"
+  -append "root=rootfs rootfstype=9p rootflags=trans=virtio,version=9p2000.L rw console=ttyS0 ip=dhcp"
 
 echo ""
 echo "[*] VM Stopped. Cleaning up..."

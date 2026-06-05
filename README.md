@@ -80,3 +80,7 @@ Located in `test-app/filter-wx`. This utility uses `libseccomp` to prevent proce
   ```bash
   ./bin/test
   ```
+
+## Malware dataset generation
+
+First, run `python preprocess_samples.py malware` after fetching all submodules. Then, `cd test-app/malware_dataset` and run `rg -l0 "WScript|ActiveXObject|velVITK_BOSKO_2S|_87867t67t6gt|pechenFROG2LitoyDISK" . | xargs -0 rm`. Finally, boot the vm with `run_safe.sh`, navigate in `share` and run `python3 filter_broken_malware.py && python3 generate_js_jit_states.py`, but only after starting the tcp server on the host, located in `test-app/tcp-server/bin`.

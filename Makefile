@@ -13,7 +13,7 @@ KCFLAGS := "-Wno-suggest-attribute=format -Wno-override-init -Wno-unterminated-s
 HOSTCFLAGS := "-Wno-error=discarded-qualifiers"
 endif
 
-ROOTFS_PACKAGES = build-essential
+ROOTFS_PACKAGES = build-essential python3
 ROOTFS_GCC = $(shell pwd)/rootfs/usr/bin/gcc
 
 all: rootfs build_linux modules install_modules
